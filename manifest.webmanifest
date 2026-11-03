@@ -1,0 +1,27 @@
+{
+  "id": "./",
+  "name": "APP — A Ponerse Polenta",
+  "short_name": "APP Polenta",
+  "description": "Registrá máquinas, pesos, planes e historial de entrenamiento.",
+  "lang": "es-AR",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#141713",
+  "theme_color": "#191b19",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

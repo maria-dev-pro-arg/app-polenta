@@ -1,0 +1,24 @@
+APP — A Ponerse Polenta | PWA piloto v0.2
+
+Incluye: index.html, manifest.webmanifest, sw.js e íconos para Android e iPhone.
+
+PARA PROBAR EN UNA COMPUTADORA
+1. Descomprimí el ZIP.
+2. En esa carpeta, ejecutá: python -m http.server 8080
+3. Abrí http://localhost:8080 en Chrome o Edge.
+4. DevTools > Application > Manifest y Service Workers para revisar instalación y caché.
+5. En DevTools > Network > Offline, recargá y verificá que APP siga abriendo.
+
+PARA INSTALAR EN TELÉFONOS
+- Publicá el contenido de esta carpeta en una URL HTTPS, sin cambiar rutas.
+- Android: abrí la URL con Chrome y elegí Instalar app en el menú (o el botón de instalación cuando aparezca).
+- iPhone: abrí la URL en Safari, tocá Compartir > Agregar a pantalla de inicio.
+- Probá que los datos persisten cerrando y reabriendo, y que abre sin conexión después de una primera carga online.
+
+PRECAUCIONES
+- Los datos se guardan SOLO en el almacenamiento local de la app en ese dispositivo. No se sincronizan entre dispositivos ni automáticamente con apps de gimnasio.
+- La instalación desde el navegador y la instalación como app pueden tener almacenamientos separados, especialmente en iPhone. Exportá un respaldo JSON antes de cambiar de modo, teléfono o navegador.
+- Hacé copias JSON frecuentes: borrar datos del navegador, desinstalar la app o perder el dispositivo puede eliminar registros.
+- El modo offline requiere haber abierto la app mientras había conexión y que el service worker terminara su instalación.
+- Abrir index.html como archivo local no instala una PWA; requiere localhost para pruebas o HTTPS para el uso real.
+- Este piloto aún NO tiene pruebas completas en dispositivos reales ni sincronización con Health Connect, Apple Health o apps de gimnasio.
