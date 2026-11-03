@@ -1,0 +1,12 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid}/{kind}/{recordId} {
+      allow read, create, update, delete: if request.auth != null
+        && request.auth.uid == uid
+        && kind in ['machines', 'plans', 'history']
+        && (resource == null || resource.data.keys().size() < 100)
+        && (request.resource == null || request.resource.data.keys().size() < 100);
+    }
+  }
+}
