@@ -98,10 +98,6 @@ async function synchronize(){
         const flat=portable(entry,kind);
         const prev=existing.get(entry.id);
         if(prev){
-          if(kind==='machines' && idMap[snap.machines.find(m=>m.id===entry.id)?.id]){
-            // La máquina equivalente de la cuenta es la referencia autorizada.
-            continue;
-          }
           if(kind==='machines' && Object.values(idMap).includes(entry.id))continue;
           if(canonical(prev)!==canonical(flat)){
             if(kind==='machines' && snap.machines.some(m=>m.id===entry.id&&m.catalogKey&&!m.lastWeight&&!m.photo))continue;
