@@ -9,7 +9,7 @@ document.body.append(popup);
 function message(text){const el=popup.querySelector('#accountMessage');if(el)el.textContent=text;}
 function htmlEscape(s){return String(s||'').replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','"':'&quot;',"'":'&#39;'}[x]));}
 const ACCOUNT_OWNER_KEY='app-polenta-cloud-owner-v1';
-let user=null, auth=null, db=null, sdk=null, ready=false;
+let user=null, auth=null, db=null, sdk=null, ready=false, deletingAccount=false;
 const normalize=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLocaleLowerCase();
 const machineKey=m=>normalize(m.name)+'|'+normalize(m.group);
 const ownedBy=()=>localStorage.getItem(ACCOUNT_OWNER_KEY);
@@ -18,7 +18,7 @@ function show(){
     <p id="accountMessage" class="help" role="status"></p>
     ${user?`<p>Sesión iniciada: <strong>${htmlEscape(user.email)}</strong></p>
       <p class="help">La sincronización es manual y conserva tus datos locales. Antes de sincronizar, APP descarga un respaldo y comprueba si hay conflictos entre dispositivos. No sincroniza las fotos.</p>
-      <div class="actions"><button type="button" class="btn primary" id="syncNow">Sincronizar ahora</button><button type="button" class="btn" id="logout">Cerrar sesión</button></div>`:
+      <div class="actions"><button type="button" class="btn primary" id="syncNow">Sincronizar ahora</button><button type="button" class="btn" id="logout">Cerrar sesión</button></div><div class="panel" style="margin-top:18px;border-color:#765950"><strong>Privacidad</strong><p class="help">Podés borrar tu cuenta y todos los datos sincronizados en Firebase. Los datos guardados en el teléfono no se borrarán.</p><button type="button" class="btn danger" id="deleteAccountButton">Eliminar cuenta y datos de la nube</button></div>`:
     `<form id="accountForm"><label class="fieldlabel">Correo electrónico</label><input class="field" type="email" name="email" required autocomplete="email">
        <label class="fieldlabel">Contraseña (mínimo 6 caracteres)</label><input class="field" type="password" name="password" required minlength="6" autocomplete="current-password">
        <div class="actions"><button class="btn primary" name="mode" value="login">Ingresar</button><button class="btn" name="mode" value="signup">Crear cuenta</button></div>
@@ -47,6 +47,7 @@ function show(){
   });
   popup.querySelector('#logout')?.addEventListener('click',async()=>{try{await sdk.signOut(auth)}catch(err){message(friendly(err))}});
   popup.querySelector('#syncNow')?.addEventListener('click',synchronize);
+  popup.querySelector('#deleteAccountButton')?.addEventListener('click',showDeleteConfirmation);
 }
 function friendly(err){const code=String(err?.code||'');
   if(code.includes('network'))return 'Sin conexión. Tus datos locales siguen a salvo.';
@@ -118,6 +119,83 @@ async function synchronize(){
   }catch(err){message('No se completó la sincronización: '+friendly(err)+(err?.message && !err?.code?' '+err.message:''));}
   finally{if(btn)btn.disabled=false;}
 }
+function showDeleteConfirmation(){
+  if(!user||deletingAccount)return;
+  popup.innerHTML=`<h3>Eliminar cuenta de APP</h3>
+    <p class="help"><strong>Esta acción es irreversible.</strong> Se eliminará tu usuario de Firebase y los registros de máquinas, planes e historial sincronizados en la nube. Tus datos locales del teléfono se conservarán.</p>
+    <p class="help">Cuenta: <strong>${htmlEscape(user.email||'')}</strong></p>
+    <form id="deleteAccountForm">
+      <label class="fieldlabel">Escribí ELIMINAR para confirmar</label>
+      <input class="field" name="confirmation" type="text" required autocomplete="off" placeholder="ELIMINAR">
+      <label class="fieldlabel" style="margin-top:12px">Tu contraseña de APP</label>
+      <input class="field" name="password" type="password" required autocomplete="current-password">
+      <p class="help">Los entrenamientos que estén guardados únicamente en este dispositivo seguirán disponibles sin iniciar sesión. Los datos locales de otros dispositivos tampoco se borran automáticamente.</p>
+      <p id="accountMessage" class="help" role="status"></p>
+      <div class="actions"><button type="submit" class="btn danger">Eliminar definitivamente</button>
+      <button type="button" class="btn" id="cancelDeleteAccount">Cancelar</button></div>
+    </form>`;
+  popup.querySelector('#cancelDeleteAccount').addEventListener('click',()=>{popup.close();show()});
+  popup.querySelector('#deleteAccountForm').addEventListener('submit',deleteAccount);
+}
+function firestoreIsMissing(err){
+  return ['not-found','failed-precondition','firestore/not-found','firestore/failed-precondition'].includes(String(err?.code||'')) &&
+    /database[\s\S]*?(?:does not exist|not found|not created)/i.test(String(err?.message||''));
+}
+async function deleteCloudRecords(uid){
+  let removed=0;
+  for(const kind of ['machines','plans','history']){
+    while(true){
+      let docs;
+      try{
+        docs=await sdk.getDocsFromServer(sdk.query(sdk.collection(db,'users',uid,kind),sdk.limit(200)));
+      }catch(err){
+        if(removed===0&&kind==='machines'&&firestoreIsMissing(err))return 0;
+        throw err;
+      }
+      if(docs.empty)break;
+      const batch=sdk.writeBatch(db);
+      docs.forEach(doc=>batch.delete(doc.ref));
+      await batch.commit();
+      removed+=docs.size;
+      message(`Eliminando registros sincronizados: ${removed}…`);
+    }
+  }
+  return removed;
+}
+async function deleteAccount(event){
+  event.preventDefault();
+  if(!user||deletingAccount)return;
+  const form=event.currentTarget;
+  if(form.elements.confirmation.value.trim()!=='ELIMINAR'){message('Escribí ELIMINAR exactamente para confirmar.');return}
+  if(!navigator.onLine){message('Necesitás conexión a internet para eliminar la cuenta.');return}
+  const current=user;
+  if(!current.email){message('La cuenta no tiene un correo verificable.');return}
+  const password=form.elements.password.value;
+  deletingAccount=true;
+  for(const control of form.querySelectorAll('button,input'))control.disabled=true;
+  let stage='reauthentication';
+  try{
+    message('Verificando tu contraseña…');
+    await sdk.reauthenticateWithCredential(current,sdk.EmailAuthProvider.credential(current.email,password));
+    form.elements.password.value='';
+    stage='deleting-cloud';
+    message('Borrando datos de Firebase…');
+    await deleteCloudRecords(current.uid);
+    stage='deleting-auth';
+    message('Borrando cuenta de acceso…');
+    await sdk.deleteUser(current);
+    if(ownedBy()===current.uid)localStorage.setItem(ACCOUNT_OWNER_KEY,'');
+    deletingAccount=false;
+    popup.close();
+    status('Modo sin cuenta · datos guardados en este dispositivo');
+    alert('Tu cuenta y sus datos sincronizados fueron eliminados. Los entrenamientos de este dispositivo se conservaron.');
+  }catch(err){
+    deletingAccount=false;
+    form.elements.password.value='';
+    for(const control of form.querySelectorAll('button,input'))control.disabled=false;
+    message((stage==='reauthentication'?'No se eliminó nada. Revisá tu contraseña.':'No se completó la eliminación. La cuenta puede seguir activa y parte de los datos en la nube pueden haber sido borrados; podés reintentar.')+' '+friendly(err));
+  }
+}
 window.PolentaCloud={openAccount:()=>{
   if(!configured){alert('Falta configurar Firebase. El modo sin cuenta sigue funcionando.');return}
   if(!ready){alert('No se pudo cargar Firebase. Comprobá la conexión y recargá.');return}
@@ -137,7 +215,7 @@ else{
     authMod.onAuthStateChanged(auth,u=>{
       user=u;ready=true;
       status(u?(ownedBy()&&ownedBy()!==u.uid?`Cuenta distinta: ${u.email} · los datos locales pertenecen a otra cuenta`:`Conectada: ${u.email} · sincronización manual`):'Modo sin cuenta · datos guardados en este dispositivo');
-      if(popup.open){popup.close();show();}
+      if(popup.open&&!deletingAccount){popup.close();show();}
     });
   }catch(err){status('Modo sin cuenta · Firebase no disponible');console.error('Firebase:',err)}
 }
