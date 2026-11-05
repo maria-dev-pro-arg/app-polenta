@@ -68,12 +68,23 @@ updateInstallUI();
 
 window.PolentaLocal={
   getSnapshot:()=>({machines:structuredClone(state.machines),plans:structuredClone(state.plans),history:structuredClone(state.history)}),
-  mergeSnapshot:(remote)=>{
+  mergeSnapshot:(remote,idMap={})=>{
+    const mapId=id=>idMap[id]||id;
+    for(const m of state.machines)m.id=mapId(m.id);
+    const found=new Map();
+    for(const m of state.machines){const old=found.get(m.id);if(!old)found.set(m.id,m);else if(m.photo&&!old.photo)old.photo=m.photo;}
+    state.machines=[...found.values()];
+    for(const p of state.plans)p.ids=[...new Set((p.ids||[]).map(mapId))];
+    for(const h of state.history)for(const it of (h.items||[]))it.id=mapId(it.id);
+    if(state.session)for(const it of (state.session.items||[]))it.id=mapId(it.id);
     for(const kind of ['machines','plans','history']){
       const byId=new Map(state[kind].map(x=>[x.id,x]));
       for(const row of remote[kind]||[]){
-        if(!byId.has(row.id))state[kind].push(row);
-        else if(kind==='machines' && !byId.get(row.id).photo && row.photo)byId.get(row.id).photo=row.photo;
+        if(!byId.has(row.id)){state[kind].push(row);byId.set(row.id,row);}
+        else if(kind==='machines'){
+          const current=byId.get(row.id),photo=current.photo||row.photo||'';
+          Object.assign(current,row,{photo});
+        }
       }
     }
     save();render();
